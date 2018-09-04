@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" xmlns:mas="urn:marlin:mas:1-0:services:schemas:mpd" mediaPresentationDuration="PT9M56S" minBufferTime="PT3.00S" profiles="urn:mpeg:dash:profile:isoff-live:2011" type="static">
+  
+  <Period>
+    <AdaptationSet lang="en" mimeType="audio/mp4" segmentAlignment="true" startWithSAP="1">
+      <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc" />
+      <ContentProtection schemeIdUri="urn:uuid:5E629AF5-38DA-4063-8977-97FFBD9902D4">
+        <mas:MarlinContentIds>
+          <mas:MarlinContentId>urn:marlin:kid:00112233445566778899aabbccddeeff</mas:MarlinContentId>
+        </mas:MarlinContentIds>
+      </ContentProtection>
+      <Representation bandwidth="138707" codecs="mp4a.40.02" id="audio.en">
+        <SegmentTemplate duration="3007" initialization="audio/en/init.mp4" media="audio/en/seg-$Number$.m4f" startNumber="0" timescale="1000" />
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet mimeType="video/mp4" segmentAlignment="true" startWithSAP="1">
+      <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc" />
+      <ContentProtection schemeIdUri="urn:uuid:5E629AF5-38DA-4063-8977-97FFBD9902D4">
+        <mas:MarlinContentIds>
+          <mas:MarlinContentId>urn:marlin:kid:00112233445566778899aabbccddeeff</mas:MarlinContentId>
+        </mas:MarlinContentIds>
+      </ContentProtection>
+      <Representation bandwidth="659895" codecs="avc1.42c015" height="288" id="video.1" width="512">
+        <SegmentTemplate duration="3000" initialization="video/1/init.mp4" media="video/1/seg-$Number$.m4f" startNumber="0" timescale="1000" />
+      </Representation>
+      <Representation bandwidth="1070812" codecs="avc1.42c01e" height="396" id="video.2" width="704">
+        <SegmentTemplate duration="3000" initialization="video/2/init.mp4" media="video/2/seg-$Number$.m4f" startNumber="0" timescale="1000" />
+      </Representation>
+      <Representation bandwidth="1497401" codecs="avc1.42c01f" height="486" id="video.3" width="864">
+        <SegmentTemplate duration="3000" initialization="video/3/init.mp4" media="video/3/seg-$Number$.m4f" startNumber="0" timescale="1000" />
+      </Representation>
+      <Representation bandwidth="1910852" codecs="avc1.42c01f" height="576" id="video.4" width="1024">
+        <SegmentTemplate duration="3000" initialization="video/4/init.mp4" media="video/4/seg-$Number$.m4f" startNumber="0" timescale="1000" />
+      </Representation>
+      <Representation bandwidth="2289263" codecs="avc1.42c01f" height="648" id="video.5" width="1152">
+        <SegmentTemplate duration="3000" initialization="video/5/init.mp4" media="video/5/seg-$Number$.m4f" startNumber="0" timescale="1000" />
+      </Representation>
+      <Representation bandwidth="2727172" codecs="avc1.42c01f" height="720" id="video.6" width="1280">
+        <SegmentTemplate duration="3000" initialization="video/6/init.mp4" media="video/6/seg-$Number$.m4f" startNumber="0" timescale="1000" />
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>
