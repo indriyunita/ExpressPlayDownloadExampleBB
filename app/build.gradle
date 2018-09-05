@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
 
 android {
     compileSdkVersion 27
@@ -23,4 +24,9 @@ dependencies {
     compile 'com.android.support:appcompat-v7:27.+'
     compile 'com.google.android.exoplayer:exoplayer:r2.5.1'
     api files('./libs/wasabi.jar')
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+
+}
+repositories {
+    mavenCentral()
 }

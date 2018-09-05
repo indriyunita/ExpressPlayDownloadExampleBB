@@ -19,7 +19,7 @@
 		android:label="@string/app_name"
 		android:theme="@style/AppTheme" >
 		<activity
-			android:name="com.intertrust.expressplay.DownloadBBExample"
+			android:name="com.intertrust.expressplay.VideoActivity"
 			android:configChanges="orientation|screenSize"
 			android:label="@string/app_name" >
 			<intent-filter>
