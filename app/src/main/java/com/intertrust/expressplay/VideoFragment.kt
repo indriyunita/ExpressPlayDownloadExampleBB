@@ -3,9 +3,9 @@ package com.intertrust.expressplay
 import android.app.AlertDialog
 import android.app.Fragment
 import android.app.ProgressDialog
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -37,13 +37,10 @@ import com.intertrust.wasabi.media.MediaDownload
 import com.intertrust.wasabi.media.PlaylistProxy
 import com.intertrust.wasabi.media.PlaylistProxyListener
 
-import java.io.File
-import java.util.Arrays
 import java.util.EnumSet
 
-import android.content.Context.MODE_PRIVATE
 import android.text.TextUtils
-import com.intertrust.expressplay.helpers.readTextFromAssets
+import com.intertrust.expressplay.helpers.*
 import com.intertrust.expressplay.utils.find
 
 
@@ -73,70 +70,54 @@ import com.intertrust.expressplay.utils.find
 
 class VideoFragment : Fragment(), PlaylistProxyListener {
 
+    // View related
     private lateinit var rootView: View
     private val simpleExoPlayerView by lazy {
         rootView.find<SimpleExoPlayerView>(R.id.videoView)
     }
+    private val progressDialog: ProgressDialog by lazy { getProgressIndicator() }
+    private val handler = Handler(Looper.getMainLooper())
 
+    // DRM related
     private val playerProxy: PlaylistProxy by lazy {
         val flags = EnumSet.noneOf(PlaylistProxy.Flags::class.java)
-        PlaylistProxy(flags, this, Handler())
+        PlaylistProxy(flags, this, handler)
     }
-
-    private var mediaDownload: MediaDownload? = null
-    private var isPlaying: Boolean = false
-    private var player: SimpleExoPlayer? = null
-
-    private val downloadDir1 = "dlDir1"
-    private val dlDirPath1 = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath + "/" + downloadDir1
+    private lateinit var mediaDownload: MediaDownload
     private var resumableDownloadFound = false
-    /**
-     * Acquire a DASH On-Demand media stream URL encrypted with the key delivered in
-     * the above license.
-     * For instance: http://content-access.intertrust-dev.com/content/onDemandprofile/Frozen-OnDemand/stream.mpd
-     */
-    private val sampleDashUrl = "http://content-access.intertrust-dev.com/content/onDemandprofile/Frozen-OnDemand/stream.mpd"
     private val content = getDashContent()
-    private val progressDialog: ProgressDialog by lazy { getProgressIndicator() }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
-                              savedInstanceState: Bundle?): View? {
-
-        rootView = inflater.inflate(R.layout.fragment_marlin_broadband_example, container, false)
-
-        initExoPlayer()
-        initAndPersonalizeWasabi()
-        acquireLicense()
-        initPlayerProxy()
-        createMediaDownload()
-        checkResumableDownload()
-        setMediaDownloadConstraints()
-
-        /**
-         * If resumable download found, and not dual download case,
-         *  offer choice of resuming or cleaning up
-         */
-        if (resumableDownloadFound) {
-            showResumeOrCleanupPromptDialog()
-        }
-
-        doDownload()
-
-        return rootView
-    }
-
-    private fun initExoPlayer() {
+    // Player related
+    private var isPlaying: Boolean = false
+    private val player: SimpleExoPlayer by lazy {
         val bandwidthMeter = DefaultBandwidthMeter()
         val videoTrackSelectionFactory = AdaptiveTrackSelection.Factory(bandwidthMeter)
         val trackSelector = DefaultTrackSelector(videoTrackSelectionFactory)
         val loadControl = DefaultLoadControl()
+        ExoPlayerFactory.newSimpleInstance(activity, trackSelector, loadControl)
+    }
 
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
+                              savedInstanceState: Bundle?): View? {
+        rootView = inflater.inflate(R.layout.fragment_marlin_broadband_example, container, false)
 
-        player = ExoPlayerFactory.newSimpleInstance(activity, trackSelector, loadControl)
+        initAndPersonalizeWasabi()
+        initExoPlayer()
+        acquireLicense()
+        initPlayerProxy()
+        createMediaDownload()
+        setMediaDownloadConstraints()
 
-        simpleExoPlayerView.useController = true
-        simpleExoPlayerView.requestFocus()
-        simpleExoPlayerView.player = player
+        resumableDownloadFound = isThereAnyResumableDownload(mediaDownload)
+        if (resumableDownloadFound)
+            showResumeOrCleanupPromptDialog()
+
+        if (isOfflineFileAvailable("$downloadDirPath/$FILENAME"))
+            playOffline()
+        else
+            doDownload()
+
+        return rootView
     }
 
     private fun initAndPersonalizeWasabi() {
@@ -149,7 +130,7 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
              * environment
              */
             Runtime.setProperty(Runtime.Property.ROOTED_OK, true)
-            Runtime.initialize(activity.getDir("wasabi", MODE_PRIVATE)
+            Runtime.initialize(activity.getDir("wasabi", Context.MODE_PRIVATE)
                     .absolutePath)
             /**
              * Personalize the application (acquire DRM keys). This is only
@@ -164,10 +145,16 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
                 Runtime.personalize()
 
         } catch (e: NullPointerException) {
-            Log.e(TAG, "runtime initialization or personalization npe: " + e.localizedMessage)
+            Log.e("OfflineApplication", "runtime initialization or personalization npe: " + e.localizedMessage)
         } catch (e: ErrorCodeException) {
-            Log.e(TAG, "runtime initialization or personalization error: " + e.localizedMessage)
+            Log.e("OfflineApplication", "runtime initialization or personalization error: " + e.localizedMessage)
         }
+    }
+
+    private fun initExoPlayer() {
+        simpleExoPlayerView.useController = true
+        simpleExoPlayerView.requestFocus()
+        simpleExoPlayerView.player = player
     }
 
     private fun acquireLicense() {
@@ -213,38 +200,11 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
 
     private fun createMediaDownload() {
         /**
-         * Create  MediaDownload singleton
+         * Create  MediaDownload instance
          */
 
         try {
             mediaDownload = MediaDownload()
-        } catch (e: ErrorCodeException) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun checkResumableDownload() {
-        /**
-         * Determine if a resumable download is found
-         */
-
-        try {
-            val status = mediaDownload!!.queryStatus() //structure
-            val state = status.state //paused or running
-            val path = status.path
-            for (pathItem in path) {
-                val contentStatus = mediaDownload!!.queryContentStatus(pathItem)
-                val contentState = contentStatus.content_state
-                val percentage = contentStatus.downloaded_percentage
-                Log.i(TAG, "$pathItem in state $contentState at % $percentage")
-                if (state == MediaDownload.State.PAUSED
-                        && contentState == MediaDownload.ContentState.PENDING
-                        && pathItem.contains(downloadDir1)) {
-                    resumableDownloadFound = true
-                    Log.i(TAG, "resumable download found in dlDir1")
-                    break
-                }
-            }
         } catch (e: ErrorCodeException) {
             e.printStackTrace()
         }
@@ -261,7 +221,7 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
         //use 2 connections for parallel download
         constraints.max_connections = 2
         try {
-            mediaDownload?.setConstraints(constraints)
+            mediaDownload.setConstraints(constraints)
         } catch (e: ErrorCodeException) {
             e.printStackTrace()
         }
@@ -272,8 +232,8 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
         //DASH URL above
         val tracks = arrayOf("video-avc1", "audio-und-mp4a", "subtitles/fr")
         this.track = tracks
-        this.subtitles_file_name = "mydownload-subtitles.vtt"
-        this.media_file_name = "mydownload-media.m4f"
+        this.media_file_name = FILENAME
+        this.subtitles_file_name = SUBTITLE
         this.url = sampleDashUrl
         this.type = MediaDownload.SourceType.DASH
     }
@@ -289,21 +249,27 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
         builder.setTitle("Resume Download ?")
         val dialogMessage = "A previously started Download to dlDir1 (possibly others) is Pending. " + "Click OK to Resume Any Pending Downloads, or Cancel to Clear all Downloads)"
         builder.setMessage(dialogMessage)
-        builder.setPositiveButton("OK") { _, i ->
+        builder.setPositiveButton("OK") { _, _ ->
             try {
-                mediaDownload?.resume()
-                progressDialog.setMessage("Resuming Download.... to $dlDirPath1")
+                mediaDownload.resume()
+                progressDialog.setMessage("Resuming Download.... to $downloadDirPath")
                 progressDialog.show()
             } catch (e: ErrorCodeException) {
                 e.printStackTrace()
             }
         }
-        builder.setNegativeButton("Cancel") { _, i ->
+        builder.setNegativeButton("Cancel") { _, _ ->
             //                      cleanup previous downloads
-            cleanup(mediaDownload, content, dlDirPath1, dlDirPath1)
+            cleanup(mediaDownload, content, downloadDirPath)
             Toast.makeText(activity, "All Downloads Canceled - Please Kill and Restart App", Toast.LENGTH_LONG).show()
         }
         builder.show()
+    }
+
+    private fun playOffline() {
+        handler.post {
+            playVideo(getOfflineVideoSource())
+        }
     }
 
     private fun doDownload() {
@@ -314,14 +280,13 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
          */
 
         try {
-            mediaDownload?.setListener(object : MediaDownload.Listener {
+            mediaDownload.setListener(object : MediaDownload.Listener {
 
                 override fun state(state: MediaDownload.State) {
                     Log.i(TAG, "Received State Update: $state")
                 }
 
                 override fun progress(contentStatus: MediaDownload.ContentStatus) {
-                    val handler = Handler(Looper.getMainLooper())
                     // playback of downloaded content starts at this percentage
                     val percentageStartPlay = 100
 
@@ -330,7 +295,7 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
                         handler.post { Toast.makeText(activity, "Media Download Failing: " + contentStatus.path, Toast.LENGTH_SHORT).show() }
                     }
 
-                    if (contentStatus.path.contains(downloadDir1)) {
+                    if (contentStatus.path.contains(downloadDir)) {
                         val progress = contentStatus.downloaded_percentage
                         progressDialog.progress = progress
                     }
@@ -344,83 +309,14 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
                     }
 
                     if (contentStatus.downloaded_percentage == percentageStartPlay
-                            && contentStatus.path.contains(downloadDir1)
+                            && contentStatus.path.contains(downloadDir)
                             && !isPlaying) {
+
+                        val videoSource = getOnlineVideoSource(contentStatus)
+
                         //playback the 1st of the content downloads
                         handler.post {
-                            val dlFileUrl = "file://" + contentStatus.path + "/" + content.media_file_name
-                            val subtitleUrl = "file://" + contentStatus.path + "/" + content.subtitles_file_name
-                            val contentType = ContentTypes.M4F
-                            val params = PlaylistProxy.MediaSourceParams()
-                            params.sourceContentType = contentType.mediaSourceParamsContentType
-
-                            if (subtitleUrl != null) {
-                                params.subtitleUrl = subtitleUrl
-                                params.subtitleLang = "default"
-                                params.subtitleName = "default subtitle"
-                            }
-
-                            val contentTypeValue = contentType.toString()
-                            val mediaSourceType = PlaylistProxy.MediaSourceType.valueOf(
-                                    if (contentTypeValue == "HLS" || contentTypeValue == "DASH") contentTypeValue else "SINGLE_FILE")
-
-
-                            val bandwidthMeterA = DefaultBandwidthMeter()
-                            val dataSourceFactory = DefaultDataSourceFactory(activity, Util.getUserAgent(activity, "exoplayer2example"), bandwidthMeterA)
-
-
-                            try {
-                                val proxyUri = playerProxy.makeUrl(dlFileUrl, mediaSourceType, params)
-                                val mp4VideoUri = Uri.parse(proxyUri)
-                                val videoSource = HlsMediaSource(mp4VideoUri, dataSourceFactory, 1, null, null)
-                                val loopingSource = LoopingMediaSource(videoSource)
-
-                                player?.prepare(loopingSource)
-
-                                player?.addListener(object : ExoPlayer.EventListener {
-                                    override fun onTimelineChanged(timeline: Timeline, manifest: Any) {
-                                        Log.v(TAG, "Listener-onTimelineChanged...")
-                                    }
-
-                                    override fun onTracksChanged(trackGroups: TrackGroupArray, trackSelections: TrackSelectionArray) {
-                                        Log.v(TAG, "Listener-onTracksChanged...")
-                                    }
-
-                                    override fun onLoadingChanged(isLoading: Boolean) {
-                                        Log.v(TAG, "Listener-onLoadingChanged...isLoading:$isLoading")
-                                    }
-
-                                    override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) {
-                                        Log.v(TAG, "Listener-onPlayerStateChanged...$playbackState")
-                                    }
-
-                                    override fun onRepeatModeChanged(repeatMode: Int) {
-                                        Log.v(TAG, "Listener-onRepeatModeChanged...")
-                                    }
-
-                                    override fun onPlayerError(error: ExoPlaybackException) {
-                                        Log.v(TAG, "Listener-onPlayerError...")
-                                        player?.stop()
-                                        player?.prepare(loopingSource)
-                                        player?.playWhenReady = true
-                                    }
-
-                                    override fun onPositionDiscontinuity() {
-                                        Log.v(TAG, "Listener-onPositionDiscontinuity...")
-                                    }
-
-                                    override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
-                                        Log.v(TAG, "Listener-onPlaybackParametersChanged...")
-                                    }
-                                })
-
-                                player?.playWhenReady = true //run file/link when ready to play.
-                                progressDialog.cancel()
-                                isPlaying = true
-                            } catch (e: Exception) {
-                                Log.e(TAG, "playback error: " + e.localizedMessage)
-                                e.printStackTrace()
-                            }
+                            playVideo(videoSource)
                         }
                     }
                 }
@@ -430,58 +326,112 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
              * start the downloads if no resumable download was found or it is a dual download case
              */
             if (!resumableDownloadFound) {
-                //cleanup just in case...
-                cleanup(mediaDownload, content, dlDirPath1, dlDirPath1)
-
-                //start the 1st media download with progress bar
-                mediaDownload?.resume()
-                mediaDownload?.addContent(dlDirPath1, content)
-                progressDialog.setMessage("Downloading.... to $dlDirPath1")
-                progressDialog.show()
+                startDownload(content, downloadDirPath)
             }
         } catch (e: ErrorCodeException) {
             e.printStackTrace()
         }
     }
 
+    private fun startDownload(content: MediaDownload.DashContent, downloadDirPath: String) {
+        mediaDownload.resume()
+        mediaDownload.addContent(downloadDirPath, content)
 
-    /**************************************
-     * Helper methods to avoid cluttering *
-     */
-
-    fun cleanup(mediaDownload: MediaDownload?, content: MediaDownload.DashContent,
-                dlDirPath1: String, dlDirPath2: String) {
-        //  cleanup previous downloads
-        val pathItems = arrayOf(dlDirPath1, dlDirPath2)
-        for (pathItem in pathItems) {
-            try {
-                val mediaFile = File(pathItem + "/" + content.media_file_name)
-                if (mediaFile.exists()) {
-                    mediaFile.delete()
-                    Log.i(TAG, "deleted file: " + mediaFile.absolutePath)
-                }
-                val subtitleFile = File(pathItem + "/" + content.subtitles_file_name)
-                if (subtitleFile.exists()) {
-                    subtitleFile.delete()
-                    Log.i(TAG, "deleted file: " + subtitleFile.absolutePath)
-                }
-                val status = mediaDownload!!.queryStatus()
-                val paths = status.path
-                if (paths != null) {
-                    val pathList = Arrays.asList(*paths)
-                    for (item in pathList) {
-                        val contentStatus = mediaDownload.queryContentStatus(item)
-                        mediaDownload.cancelContent(item)
-                        Log.i(TAG, "canceling path $item")
-                    }
-                }
-            } catch (e: ErrorCodeException) {
-                e.printStackTrace()
-            }
-
-        }
+        progressDialog.setMessage("Downloading.... to $downloadDirPath")
+        progressDialog.show()
     }
 
+    private fun getOnlineVideoSource(contentStatus: MediaDownload.ContentStatus): LoopingMediaSource {
+        val downloadedFileUri = getDownloadedFileUri(contentStatus)
+        val subtitleUri = getDownloadedSubtitleUri(contentStatus)
+
+        val contentType = ContentTypes.M4F
+        val contentTypeValue = contentType.toString()
+        val bandwidthMeterA = DefaultBandwidthMeter()
+        val dataSourceFactory = DefaultDataSourceFactory(activity, Util.getUserAgent(activity, "exoplayer2example"), bandwidthMeterA)
+
+        val mediaSourceType = PlaylistProxy.MediaSourceType.valueOf(if (contentTypeValue == "HLS" || contentTypeValue == "DASH") contentTypeValue else "SINGLE_FILE")
+        val mediaSourceParams = PlaylistProxy.MediaSourceParams().apply {
+            this.sourceContentType = contentType.mediaSourceParamsContentType
+            this.subtitleUrl = subtitleUri
+            this.subtitleLang = "default"
+            this.subtitleName = "default subtitle"
+        }
+
+        val proxyUri = playerProxy.makeUrl(downloadedFileUri, mediaSourceType, mediaSourceParams)
+        val mp4VideoUri = Uri.parse(proxyUri)
+        val videoSource = HlsMediaSource(mp4VideoUri, dataSourceFactory, 1, null, null)
+        return LoopingMediaSource(videoSource)
+    }
+
+    private fun getOfflineVideoSource(): LoopingMediaSource {
+        val contentType = ContentTypes.M4F
+        val contentTypeValue = contentType.toString()
+        val bandwidthMeterA = DefaultBandwidthMeter()
+        val dataSourceFactory = DefaultDataSourceFactory(activity, Util.getUserAgent(activity, "exoplayer2example"), bandwidthMeterA)
+
+        val mediaSourceType = PlaylistProxy.MediaSourceType.valueOf(if (contentTypeValue == "HLS" || contentTypeValue == "DASH") contentTypeValue else "SINGLE_FILE")
+        val mediaSourceParams = PlaylistProxy.MediaSourceParams().apply {
+            this.sourceContentType = contentType.mediaSourceParamsContentType
+            this.subtitleLang = "default"
+            this.subtitleName = "default subtitle"
+        }
+
+        val offlineUri = "$downloadDirPath/$FILENAME"
+        val proxyUri = playerProxy.makeUrl(offlineUri, mediaSourceType, mediaSourceParams)
+        val mp4VideoUri = Uri.parse(proxyUri)
+        val videoSource = HlsMediaSource(mp4VideoUri, dataSourceFactory, 1, null, null)
+        return LoopingMediaSource(videoSource)
+    }
+
+    private fun playVideo(loopingSource: LoopingMediaSource) {
+        try {
+            player.prepare(loopingSource)
+            player.addListener(object : ExoPlayer.EventListener {
+                override fun onTimelineChanged(timeline: Timeline, manifest: Any) {
+                    Log.v(TAG, "Listener-onTimelineChanged...")
+                }
+
+                override fun onTracksChanged(trackGroups: TrackGroupArray, trackSelections: TrackSelectionArray) {
+                    Log.v(TAG, "Listener-onTracksChanged...")
+                }
+
+                override fun onLoadingChanged(isLoading: Boolean) {
+                    Log.v(TAG, "Listener-onLoadingChanged...isLoading:$isLoading")
+                }
+
+                override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) {
+                    Log.v(TAG, "Listener-onPlayerStateChanged...$playbackState")
+                }
+
+                override fun onRepeatModeChanged(repeatMode: Int) {
+                    Log.v(TAG, "Listener-onRepeatModeChanged...")
+                }
+
+                override fun onPlayerError(error: ExoPlaybackException) {
+                    Log.v(TAG, "Listener-onPlayerError...")
+                    player.stop()
+                    player.prepare(loopingSource)
+                    player.playWhenReady = true
+                }
+
+                override fun onPositionDiscontinuity() {
+                    Log.v(TAG, "Listener-onPositionDiscontinuity...")
+                }
+
+                override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+                    Log.v(TAG, "Listener-onPlaybackParametersChanged...")
+                }
+            })
+
+            player.playWhenReady = true //run file/link when ready to play.
+            progressDialog.cancel()
+            isPlaying = true
+        } catch (e: Exception) {
+            Log.e(TAG, "playback error: " + e.localizedMessage)
+            e.printStackTrace()
+        }
+    }
 
     override fun onErrorNotification(errorCode: Int, errorString: String) {
         Log.e(TAG, "PlaylistProxy Event: Error Notification, error code = " +
@@ -490,6 +440,9 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
     }
 
     companion object {
-        internal val TAG = "SampleBBPlayer"
+        const val TAG = "SampleBBPlayer"
+        const val sampleDashUrl = "http://content-access.intertrust-dev.com/content/onDemandprofile/Frozen-OnDemand/stream.mpd"
+        const val FILENAME = "mydownload-media.m4f"
+        const val SUBTITLE = "mydownload-subtitles.vtt"
     }
 }
