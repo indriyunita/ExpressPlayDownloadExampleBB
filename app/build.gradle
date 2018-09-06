@@ -17,14 +17,40 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
         }
     }
+
+    splits {
+        abi {
+            // Enables building multiple APKs per ABI.
+            enable true
+
+            // By default all ABIs are included, so use reset() and include to specify that we only
+            // want APKs for x86 and x86_64.
+
+            // Resets the list of ABIs that Gradle should create APKs for to none.
+            reset()
+
+            // Specifies a list of ABIs that Gradle should create APKs for.
+            include "arm64-v8a", "armeabi", "armeabi-v7a", "x86", "x86_64"
+
+            // Specifies that we also want to also generate a universal APK that includes all ABIs,
+            // in case Google Play Store is unable to identify the correct APK to install for a target device.
+            universalApk true
+        }
+    }
 }
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
-    compile 'com.android.support:appcompat-v7:27.+'
-    compile 'com.google.android.exoplayer:exoplayer:r2.5.1'
     api files('./libs/wasabi.jar')
-    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+
+    implementation 'com.android.support:appcompat-v7:27.+'
+    implementation "com.google.android.exoplayer:exoplayer:$exoplayer_version"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+
+    // AA
+    annotationProcessor "org.androidannotations:androidannotations:$aa_version"
+    implementation "org.androidannotations:androidannotations-api:$aa_version"
+    kapt "org.androidannotations:androidannotations::$aa_version"
 
 }
 repositories {
