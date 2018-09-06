@@ -1,4 +1,4 @@
-package com.intertrust.expressplay
+package com.intertrust.expressplay.modules.offlinevideo.helpers
 
 /**
  * This enum simply maps the media types to the mimetypes required for the playlist proxy

@@ -1,4 +1,4 @@
-package com.intertrust.expressplay
+package com.intertrust.expressplay.modules.offlinevideo
 
 import android.app.AlertDialog
 import android.app.Fragment
@@ -40,7 +40,8 @@ import com.intertrust.wasabi.media.PlaylistProxyListener
 import java.util.EnumSet
 
 import android.text.TextUtils
-import com.intertrust.expressplay.helpers.*
+import com.intertrust.expressplay.R
+import com.intertrust.expressplay.modules.offlinevideo.helpers.*
 import com.intertrust.expressplay.utils.find
 
 
@@ -101,21 +102,23 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
                               savedInstanceState: Bundle?): View? {
         rootView = inflater.inflate(R.layout.fragment_marlin_broadband_example, container, false)
 
-        initAndPersonalizeWasabi()
         initExoPlayer()
-        acquireLicense()
+
+
+        initAndPersonalizeWasabi() //
+        acquireLicense("license-token.xml")
         initPlayerProxy()
         createMediaDownload()
         setMediaDownloadConstraints()
-
-        resumableDownloadFound = isThereAnyResumableDownload(mediaDownload)
-        if (resumableDownloadFound)
-            showResumeOrCleanupPromptDialog()
+//
+//        resumableDownloadFound = isThereAnyResumableDownload(mediaDownload)
+//        if (resumableDownloadFound)
+//            showResumeOrCleanupPromptDialog()
 
         if (isOfflineFileAvailable("$downloadDirPath/$FILENAME"))
             playOffline()
         else
-            doDownload()
+            doDownload() // playOnline
 
         return rootView
     }
@@ -157,7 +160,7 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
         simpleExoPlayerView.player = player
     }
 
-    private fun acquireLicense() {
+    private fun acquireLicense(licenseAssetFile: String) {
         /**
          * Acquire a Marlin Broadband License. The license is acquired using
          * a License Acquisition token. Such tokens for sample content can
@@ -174,7 +177,7 @@ class VideoFragment : Fragment(), PlaylistProxyListener {
          * Responding) errors. In a production application this should be
          * called in a background thread.
          */
-        val licenseAcquisitionToken = readTextFromAssets("license-token.xml", activity)
+        val licenseAcquisitionToken = readTextFromAssets(licenseAssetFile, activity)
         if (TextUtils.isEmpty(licenseAcquisitionToken)) {
             Log.e(TAG, "Could not find action token in the assets directory local - exiting")
         }

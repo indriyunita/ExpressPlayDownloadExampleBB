@@ -1,10 +1,10 @@
-package com.intertrust.expressplay.helpers
+package com.intertrust.expressplay.modules.offlinevideo.helpers
 
 import android.app.Activity
 import android.content.Context
 import android.os.Environment
 import android.util.Log
-import com.intertrust.expressplay.VideoFragment
+import com.intertrust.expressplay.modules.offlinevideo.VideoFragment
 import com.intertrust.wasabi.ErrorCodeException
 import com.intertrust.wasabi.media.MediaDownload
 import java.io.ByteArrayOutputStream
